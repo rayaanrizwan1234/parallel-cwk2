@@ -70,23 +70,59 @@ int main( int argc, char **argv )
     // Calculate the number of floats per process. Note that only rank 0 has the correct value of localSize
     // at this point in the code. This will somehow need to be communicated to all other processes. Note also
     // that we can assume that globalSize is a multiple of numProcs.
-    int localSize = globalSize / numProcs;          // = 0 at this point of the code for all processes except rank 0.
+              // = 0 at this point of the code for all processes except rank 0.
 
-    // Start the timing now, after the data has been loaded (will only output on rank 0).
+    // Broadcast globalsize to all the processes
+    MPI_Bcast(&globalSize, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    int localSize = globalSize / numProcs;
+    float *localData = (float*) malloc(localSize*sizeof(float));
+    
+    // Start the timing now, after the data has been loaded (will only output on rank 0)
     double startTime = MPI_Wtime();
 
-
-    //
-    // Task 1: Calculate the mean using all available processes.
-    //
-    float mean = 0.0f;          // Your calculated mean should be placed in this variable.
+    // Task 1: Calculate the mean using all available processes.   
+    // Scatter the data among all processes
+    MPI_Scatter(globalData, localSize, MPI_FLOAT, localData, localSize, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
 
-    //
+    // Compute local sums and get global mean from it
+    float localSum = 0.0f;
+    for (int i = 0; i < localSize; i++) localSum += localData[i];
+    
+    float globalSum;
+    MPI_Reduce(&localSum, &globalSum, 1, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+    
+    float mean = 0.0f;
+    if (rank == 0) {
+        mean = globalSum / globalSize;
+    }
+
     // Task 2. Calculate the variance using all processes.
-    //
-    float variance = 0.0f;      // Your calculated variance should be placed in this variable.
+    for (int step = 1; step < numProcs; step *= 2) {
+        if (rank % (2 * step) == 0) {
+            if (rank + step < numProcs) {
+                MPI_Send(&mean, 1, MPI_FLOAT, rank + step, 0, MPI_COMM_WORLD);
+            }
+        } else {
+            MPI_Recv(&mean, 1, MPI_FLOAT, rank - step, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            break;
+        }
+    }
 
+    // Calculate local squared differences and then global variance
+    float localSquaredSum = 0.0f;
+    for (int i = 0; i < localSize; i++) {
+        localSquaredSum += (localData[i] - mean) * (localData[i] - mean);
+    }
+
+    float globalSuaredSum;
+    MPI_Reduce(&localSquaredSum, &globalSuaredSum, 1, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+    
+    float variance = 0.0f;
+    if (rank == 0) {
+        variance = globalSuaredSum / globalSize;
+    }
 
     //
     // Output the results alongside a serial check.
