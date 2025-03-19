@@ -99,14 +99,15 @@ int main( int argc, char **argv )
     }
 
     // Task 2. Calculate the variance using all processes.
-    for (int step = 1; step < numProcs; step *= 2) {
-        if (rank % (2 * step) == 0) {
+    int step;
+    for (step = 1; step < numProcs; step *= 2) {
+        if (rank < step) {
             if (rank + step < numProcs) {
                 MPI_Send(&mean, 1, MPI_FLOAT, rank + step, 0, MPI_COMM_WORLD);
             }
-        } else {
+        } 
+        else if (rank >= step && rank < step * 2) {
             MPI_Recv(&mean, 1, MPI_FLOAT, rank - step, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            break;
         }
     }
 
